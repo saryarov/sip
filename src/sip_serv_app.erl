@@ -3,12 +3,12 @@
 %% Модуль приложения sip_serv.
 %%
 %% При запуске:
-%% - создаёт схему базы данных (если её ещё нет);
-%% - запускает Mnesia;
-%% - создаёт таблицы базы данных;
-%% - ожидает загрузки таблиц;
-%% - загружает абонентов из конфигурационного файла;
-%% - запускает супервизор приложения.
+%% создаёт схему базы данных (если её ещё нет);
+%% запускает Mnesia;
+%% создаёт таблицы базы данных;
+%% ожидает загрузки таблиц;
+%% загружает абонентов из конфигурационного файла;
+%% запускает супервизор приложения.
 %% @end
 %%%-------------------------------------------------------------------
 
@@ -22,134 +22,104 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%% Запускает приложение.
+%% Запускает приложение и Mnesia
 %% @param StartType тип запуска приложения.
 %% @param StartArgs аргументы запуска приложения.
-%% @return {ok, Pid}, если приложение успешно запущено;
-%%         {error, Reason} в случае ошибки.
-%% @end
-%%--------------------------------------------------------------------
--spec start(application:start_type(), term()) ->
-    {ok, pid()} | {error, term()}.
-start(_StartType, _StartArgs) ->
-
-    Dispatch = cowboy_router:compile([
-        {'_', [
-
-            %% API
-            {"/api/stats",           sip_stats_handler, []},
-            {"/api/users",           sip_user_handler,  []},
-            {"/api/users/:aor", sip_user_handler,  []},
-
-            %% Мониторинг / логи
-            {"/api/monitor/log",      sip_log_handler, []},
-            {"/api/monitor/log/full", sip_log_handler, []}
-        ]}
-    ]),
-
-    {ok, _} = cowboy:start_clear(rest_listener,
-        [{port, 8080}],
-        #{env => #{dispatch => Dispatch}}
-    ),
-
-    io:format("~n[INFO] REST API started on http://localhost:8080~n"),
-
-    %% Останавливаем Mnesia, если она уже была запущена
-    mnesia:stop(),
-
-    %% Создаём схему только при первом запуске
-    case mnesia:create_schema([node()]) of
-        ok ->
-            start_mnesia();
-        {error, {_, {already_exists, _}}} ->
-            start_mnesia();
-        {error, {already_exists, _}} ->
-            start_mnesia();
-        {error, SchemaReason} ->
-            error_logger:error_msg(
-                "Create schema failed: ~p~n",
-                [SchemaReason]
-            ),
-            {error, SchemaReason}
-    end.
-
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Запускает Mnesia, создаёт таблицы, загружает конфигурацию
-%% и запускает супервизор приложения.
 %% @return {ok, Pid}, если Mnesia успешно запущена и приложение
 %%         инициализировано; {error, Reason} при ошибке запуска.
 %% @end
 %%--------------------------------------------------------------------
--spec start_mnesia() ->
-    {ok, pid()} | {error, term()}.
-start_mnesia() ->
-    case mnesia:start() of
+-spec start(application:start_type(), term()) -> {ok, pid()} | {error, term()}.
+start(_StartType, _StartArgs) ->
+    ClusterNode = application:get_env(sip_serv, cluster_nodes, [node()]),
+    Node = node(),
+
+    %% Подключаемся к другим узлам
+    lists:foreach(fun(N) ->
+        case net_adm:ping(N) of
+            pong ->
+                error_logger:info_msg("~n [~p:~p] Connect to ~p~n", [?MODULE, ?LINE, N]);
+            pang ->
+                ok
+        end
+    end, ClusterNode -- [Node]),
+    mnesia:stop(),
+
+    %% Проверяем существует ли схема Mnesia
+    IsSchema = case catch mnesia:table_info(schema, disc_copies) of
+        [Node | _] ->
+            true;
+        _ ->
+            false
+    end,
+    case IsSchema of
+        true ->
+            mnesia:start();
+        false ->
+            LiveNodes = live_nodes(ClusterNode -- [Node], 5),
+            case LiveNodes of
+                [] ->
+                    %% Если узлов больше нет, создаем новую схему
+                    error_logger:info_msg("[~p:~p] Create schema in ~p~n", [?MODULE, ?LINE, Node]),
+                    mnesia:create_schema([Node]),
+                    mnesia:start();
+                _ ->
+                    %% Если есть активная нода, то присоединяемся к ней
+                    error_logger:info_msg("[~p:~p] Connect to cluster ~p~n", [?MODULE, ?LINE, LiveNodes]),
+                    mnesia:start(),
+                    mnesia:change_config(extra_db_nodes, LiveNodes),
+                    %% Создаем disc_copies для таблицы schema
+                    case mnesia:change_table_copy_type(schema, node(), disc_copies) of
+                        {atomic, ok} ->
+                            ok;
+                        {aborted, Reason} ->
+                            error_logger:error_msg("[~p:~p] Error adding to schema, Reason ~p~n", [?MODULE, ?LINE, Reason])
+                    end
+            end
+    end,
+
+    %% Создаем таблицы
+    case sip_serv_db:init_db() of
         ok ->
-            start_application();
-        {error, {already_started, _}} ->
-            start_application();
-        {error, StartReason} ->
-            error_logger:error_msg(
-                "Mnesia start failed: ~p~n",
-                [StartReason]
-            ),
-            {error, StartReason}
+            ok;
+        {error, InitReason} ->
+            error_logger:error_msg("[~p:~p] Error initializing DB, Reason ~p~n", [?MODULE, ?LINE, InitReason])
+    end,
+    case mnesia:wait_for_tables([abonent, registration, erlsubscription, publication], 30000) of
+        ok ->
+            case sip_serv_sup:start_link() of
+                {ok, Pid} ->
+                    load_abonents(),
+                    {ok, Pid};
+                {error, SupReason} ->
+                    mnesia:stop(),
+                    {error, SupReason}
+            end;
+        {error, WaitReason} ->
+            error_logger:error_msg("[~p:~p] Error wait for tables, Reason ~p~n", [?MODULE, ?LINE, WaitReason]),
+            mnesia:stop(),
+            {error, WaitReason}
     end.
 
 %%--------------------------------------------------------------------
-%% @private
 %% @doc
-%% Выполняет инициализацию базы данных, ожидает готовности таблиц,
-%% загружает абонентов и запускает супервизор приложения.
-%% @return {ok, Pid}, если приложение успешно инициализировано;
-%%         {error, Reason} при ошибке ожидания таблиц
-%%         или запуска супервизора.
+%% Возвращает список активных узлов из заданного списка.
+%% @param Nodes список узлов для проверки
+%% @param Retries количество попыток повторных проверок активности узла.
+%% @return список акивных узлов, доступных в сети
 %% @end
 %%--------------------------------------------------------------------
--spec start_application() ->
-    {ok, pid()} | {error, term()}.
-start_application() ->
+-spec live_nodes(Nodes :: list(), Retries :: integer()) -> list().
+live_nodes(_Nodes, 0) ->
+    [];
 
-    %% Создаём таблицы
-    sip_serv_db:init_db(),
-
-    %% Ожидаем готовности таблиц Mnesia
-    case mnesia:wait_for_tables(
-        [abonent, registration, erlsubscription, publication],
-        30000
-    ) of
-        ok ->
-            %% Запускаем супервизор, чтобы создались ETS-таблицы
-            case sip_serv_sup:start_link() of
-                {ok, Pid} ->
-                    case sip_serv_cache:restore_cache() of
-                        ok ->
-                            ok;
-
-                        {error, RestoreReason} ->
-                            error_logger:error_msg(
-                                "Cache restore failed: ~p~n",
-                                [RestoreReason]
-                            )
-                    end,
-
-                    load_abonents(),
-                    {ok, Pid};
-
-                {error, SupErr} ->
-                    mnesia:stop(),
-                    {error, SupErr}
-            end;
-
-        {timeout, BadTables} ->
-            mnesia:stop(),
-            {error, {timeout, BadTables}};
-
-        {error, WaitReason} ->
-            mnesia:stop(),
-            {error, WaitReason}
+live_nodes(Nodes, Retries) ->
+    case [N || N <- Nodes, net_adm:ping(N) =:= pong] of
+        [] ->
+            timer:sleep(1000),
+            live_nodes(Nodes, Retries - 1);
+        Live ->
+            Live
     end.
 %%--------------------------------------------------------------------
 %% @doc
@@ -160,35 +130,26 @@ start_application() ->
 -spec load_abonents() -> ok.
 load_abonents() ->
     Abonents = sip_serv_conf:get_abonents(),
-
     lists:foreach(
         fun(AbonentMap) ->
             Aor = maps:get(aor, AbonentMap, undefined),
             Password = maps:get(password, AbonentMap, undefined),
             Domain = maps:get(domain, AbonentMap, undefined),
-
-            case Aor =:= undefined orelse
-                 Password =:= undefined orelse
-                 Domain =:= undefined of
+            case Aor =:= undefined orelse Password =:= undefined orelse Domain =:= undefined of
                 true ->
-                    error_logger:warning_msg(
-                        "Skipping invalid abonent entry: ~p~n",
-                        [AbonentMap]
-                    );
+                    error_logger:warning_msg("[~p:~p] Skipping invalid abonent entry: ~p~n", [?MODULE, ?LINE, AbonentMap]);
                 false ->
-                    sip_serv_db:add_abonent(
-                        #abonent{
+                    Abonent = #abonent{
                             aor = Aor,
                             password = Password,
                             domain = Domain,
                             create_time = erlang:system_time(second)
-                        }
-                    )
+                        },
+                    mnesia:transaction(fun() -> mnesia:write(Abonent) end)
             end
         end,
         Abonents
     ),
-
     ok.
 
 %%--------------------------------------------------------------------

@@ -5,11 +5,41 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(sip_serv_api).
+-include("sip_serv_records.hrl").
 
--export([add_user/2, delete_user/1, monitor_log/0, monitor_full_log/0, monitor_log/1, monitor_full_log/1]).
+-export([get_users/0, add_user/2, delete_user/1, monitor_log/0, monitor_full_log/0, monitor_log/1, monitor_full_log/1]).
+
 %%--------------------------------------------------------------------
 %% @doc
-%% Записывает краткую статистику в лог-файл (по умолчанию `logs/active.log`).
+%% Возвращает список всех абонентов (без паролей).
+%% @return {ok, [#{aor => binary()}]} | {error, term()}
+%% @end
+%%--------------------------------------------------------------------
+-spec get_users() -> {ok, [map()]} | {error, term()}.
+get_users() ->
+    case sip_serv_cache:get_all(abonents) of
+        {ok, Abonents} ->
+            Users = lists:map(
+                fun(Abonent) ->
+                    Aor = Abonent#abonent.aor,
+                    AorBin = case Aor of
+                        B when is_binary(B) -> B;
+                        L when is_list(L)   -> list_to_binary(L);
+                        Other -> list_to_binary(io_lib:format("~p", [Other]))
+                    end,
+                    #{<<"aor">> => AorBin}
+                end,
+                Abonents
+            ),
+            {ok, Users};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Записывает краткую статистику в лог-файл (по умолчанию logs/active.log).
 %%
 %% @return ok | {error, term()}
 %% @end
@@ -45,7 +75,7 @@ monitor_log(FileName) ->
     end.
 %%--------------------------------------------------------------------
 %% @doc
-%% Записывает полную статистику в лог-файл (по умолчанию `logs/active.log`).
+%% Записывает полную статистику в лог-файл (по умолчанию logs/active.log).
 %%
 %% @return ok | {error, term()}
 %% @end
@@ -82,7 +112,7 @@ monitor_full_log(FileName) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Добавляет нового пользователя в систему.
-%% Автоматически приводит `Username` к строке (list).
+%% Автоматически приводит Username к строке (list).
 %%
 %% @param Username Имя пользователя (бинар или строка)
 %% @param Password Пароль пользователя
@@ -106,7 +136,7 @@ add_user(AOR, Password) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Удаляет пользователя из системы.
-%% Автоматически приводит `Username` к строке (list).
+%% Автоматически приводит Username к строке (list).
 %%
 %% @param Username Имя пользователя (бинар или строка)
 %% @return ok | {error, not_found} | {error, term()}

@@ -216,6 +216,7 @@ sip_registrar_store(_AppId, {put, AOR, Contacts, TTL}) ->
     ok;
 
 sip_registrar_store(_AppId, {del, AOR}) ->
+    AorStr = aor_to_string(AOR),
     error_logger:info_msg("[~p:~p] Registrar store DELETE for AOR: ~s",
                           [?MODULE, ?LINE, AorStr]),
     sip_serv_db:delete_all_registrations(aor_to_string(AOR)),

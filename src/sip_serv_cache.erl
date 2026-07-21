@@ -51,8 +51,8 @@
 %%--------------------------------------------------------------------
 %% @doc
 %% Запускает процесс ETS-кэша как gen_server.
-%% @return `{ok, Pid}` при успешном запуске;
-%%         `{error, Reason}` в случае ошибки.
+%% @return {ok, Pid} при успешном запуске;
+%%         {error, Reason} в случае ошибки.
 %% @end
 %%--------------------------------------------------------------------
 -spec start_link() ->
@@ -70,7 +70,7 @@ start_link() ->
 %% @private
 %% @doc
 %% Инициализирует ETS-таблицы кэша при старте gen_server.
-%% @return `{ok, #{}}`.
+%% @return {ok, #{}}.
 %% @end
 %%--------------------------------------------------------------------
 -spec init([]) ->
@@ -110,8 +110,8 @@ init([]) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Сохраняет абонента в ETS-кэш.
-%% @param Abonent запись `#abonent{}`.
-%% @return `true`.
+%% @param Abonent запись #abonent{}.
+%% @return true.
 %% @end
 %%--------------------------------------------------------------------
 -spec put_abonent(#abonent{}) ->
@@ -126,8 +126,8 @@ put_abonent(Abonent) ->
 %% @doc
 %% Получает абонента из ETS-кэша по AOR.
 %% @param Aor адрес записи абонента.
-%% @return `{ok, #abonent{}}` если найден;
-%%         `{error, not_found}` если не найден.
+%% @return {ok, #abonent{}} если найден;
+%%         {error, not_found} если не найден.
 %% @end
 %%--------------------------------------------------------------------
 -spec get_abonent(string()) ->
@@ -149,7 +149,7 @@ get_abonent(Aor) ->
 %% @doc
 %% Удаляет абонента из ETS-кэша по AOR.
 %% @param Aor адрес записи абонента.
-%% @return `true`.
+%% @return true.
 %% @end
 %%--------------------------------------------------------------------
 -spec delete_abonent(string()) ->
@@ -163,8 +163,8 @@ delete_abonent(Aor) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Сохраняет регистрацию в ETS-кэш.
-%% @param Registration запись `#registration{}`.
-%% @return `true`.
+%% @param Registration запись #registration{}.
+%% @return true.
 %% @end
 %%--------------------------------------------------------------------
 -spec put_registration(#registration{}) ->
@@ -179,7 +179,7 @@ put_registration(Registration) ->
 %% @doc
 %% Получает все регистрации абонента из кэша по AOR.
 %% @param Aor адрес записи абонента.
-%% @return `{ok, [#registration{}]}` — список может быть пустым.
+%% @return {ok, [#registration{}]} — список может быть пустым.
 %% @end
 %%--------------------------------------------------------------------
 -spec get_registrations(string()) ->
@@ -197,7 +197,7 @@ get_registrations(Aor) ->
 %% Удаляет регистрацию абонента по AOR и контакту.
 %% @param Aor адрес записи абонента.
 %% @param Contact контакт регистрации.
-%% @return `ok`.
+%% @return ok.
 %% @end
 %%--------------------------------------------------------------------
 -spec delete_registration(string(), string()) -> ok.
@@ -243,8 +243,8 @@ delete_registration_object(Registration) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Сохраняет подписку в ETS-кэш.
-%% @param Subscription запись `#erlsubscription{}`.
-%% @return `true`.
+%% @param Subscription запись #erlsubscription{}.
+%% @return true.
 %% @end
 %%--------------------------------------------------------------------
 -spec put_subscription(#erlsubscription{}) ->
@@ -259,7 +259,7 @@ put_subscription(Subscription) ->
 %% @doc
 %% Получает все подписки абонента из кэша по AOR.
 %% @param Aor адрес записи абонента.
-%% @return `{ok, [#erlsubscription{}]}` — список может быть пустым.
+%% @return {ok, [#erlsubscription{}]} — список может быть пустым.
 %% @end
 %%--------------------------------------------------------------------
 -spec get_subscriptions(string()) ->
@@ -284,7 +284,7 @@ get_subscriptions(Aor) ->
 %% @doc
 %% Удаляет подписку из кэша по идентификатору.
 %% @param Id уникальный идентификатор подписки (binary()).
-%% @return `true`.
+%% @return true.
 %% @end
 %%--------------------------------------------------------------------
 -spec delete_subscription(binary()) ->
@@ -298,8 +298,8 @@ delete_subscription(Id) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Сохраняет публикацию в ETS-кэш.
-%% @param Publication запись `#publication{}`.
-%% @return `true`.
+%% @param Publication запись #publication{}.
+%% @return true.
 %% @end
 %%--------------------------------------------------------------------
 -spec put_publication(#publication{}) ->
@@ -314,7 +314,7 @@ put_publication(Publication) ->
 %% @doc
 %% Получает все публикации абонента из кэша по AOR.
 %% @param Aor адрес записи абонента.
-%% @return `{ok, [#publication{}]}` — список может быть пустым.
+%% @return {ok, [#publication{}]} — список может быть пустым.
 %% @end
 %%--------------------------------------------------------------------
 -spec get_publications(string()) ->
@@ -332,7 +332,7 @@ get_publications(Aor) ->
 %% Удаляет публикацию по AOR и тегу.
 %% @param Aor адрес записи абонента.
 %% @param Tag уникальный тег публикации.
-%% @return `ok`.
+%% @return ok.
 %% @end
 %%--------------------------------------------------------------------
 -spec delete_publication(string(), string()) ->

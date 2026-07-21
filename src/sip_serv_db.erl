@@ -55,29 +55,59 @@
 %%         {error, Reason} в случае ошибки.
 %% @end
 %%--------------------------------------------------------------------
--spec init_db() ->
-    ok | {error, term()}.
+-spec init_db() -> ok | {error, term()}.
 init_db() ->
-    create_table(
-        abonent,
-        record_info(fields,abonent)
-    ),
-
-    create_table(
-        registration,
-        record_info(fields, registration)
-    ),
-
-    create_table(
-        erlsubscription,
-        record_info(fields, erlsubscription)
-    ),
-
-    create_table(
-    publication,
-    record_info(fields, publication)
-),
+    Tables = [
+        {abonent, record_info(fields, abonent), set},
+        {registration, record_info(fields, registration), bag},
+        {erlsubscription, record_info(fields, erlsubscription), set},
+        {publication, record_info(fields, publication), bag}
+    ],
+    lists:foreach(fun({Table, Attributes, TableType}) ->
+        case create_table(Table, Attributes, TableType) of
+            ok ->
+                ok;
+            {error, Reason} ->
+                logger:error("Error create/copy table ~p: ~p (Module ~p, Line ~p)~n", [Table, Reason, ?MODULE, ?LINE]),
+                {error, Reason}
+        end
+    end, Tables),
     ok.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Внутренняя функция для создания таблицы Mnesia.
+%% @param Table имя создаваемой таблицы.
+%% @param Attributes список атрибутов записи.
+%% @return ok при успешном создании;
+%%         {error, Reason} в случае ошибки.
+%% @end
+%%--------------------------------------------------------------------
+-spec create_table(atom(), [atom()], atom()) -> ok | {error, term()}.
+create_table(Table, Attributes, TableType) ->
+    case mnesia:create_table(Table, [
+        {attributes, Attributes},
+        {disc_copies, [node()]},
+        {type, TableType}
+    ]) of
+        {atomic, ok} ->
+            ok;
+        {aborted, {already_exists, Table}} ->
+            case lists:member(node(), mnesia:table_info(Table, disc_copies)) of
+                true ->
+                    ok;
+                false ->
+                    logger:info("Copy the ~p table to my disc (Module ~p, Line ~p)", [Table, ?MODULE, ?LINE]),
+                    case mnesia:add_table_copy(Table, node(), disc_copies) of
+                        {atomic, ok} ->
+                            ok;
+                        {abortet, Reason} ->
+                            {error, Reason}
+                    end
+                end;
+        {aborted, Reason} ->
+            {error, Reason}
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -927,37 +957,3 @@ delete_expired() ->
 ),
             {error, Reason}
     end.
-%%--------------------------------------------------------------------
-%% @doc
-%% Внутренняя функция для создания таблицы Mnesia.
-%% Для таблиц registration и publication используется тип bag,
-%% для остальных — set.
-%% @param Table имя создаваемой таблицы.
-%% @param Attributes список атрибутов записи.
-%% @return ok при успешном создании;
-%%         {error, Reason} в случае ошибки.
-%% @end
-%%--------------------------------------------------------------------
--spec create_table(atom(), [atom()]) ->
-    ok | {error, term()}.
-create_table(Table, Attributes) ->
-    TableType =
-        case Table of
-            registration -> bag;
-            publication -> bag;
-            _ -> set
-        end,
-
-    case mnesia:create_table(Table, [
-        {attributes, Attributes},
-        {disc_copies, [node()]},
-        {type, TableType}
-    ]) of
-        {atomic, ok} ->
-            ok;
-        {aborted, {already_exists, Table}} ->
-            ok;
-        {aborted, Reason} ->
-            {error, Reason}
-    end.
-

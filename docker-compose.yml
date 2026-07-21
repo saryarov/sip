@@ -1,0 +1,30 @@
+version: '3'
+
+services:
+  sip-node1:
+    build: .
+    container_name: sip-node1
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NODE_NAME=node1@127.0.0.101
+      - VIP=127.0.0.100
+      - PRIORITY=150
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+
+  sip-node2:
+    build: .
+    container_name: sip-node2
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NODE_NAME=node2@127.0.0.102
+      - VIP=127.0.0.100
+      - PRIORITY=100
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config

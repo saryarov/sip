@@ -22,6 +22,7 @@
 init(Req, State) ->
     Method = cowboy_req:method(Req),
     case Method of
+        <<"GET">>    -> handle_get(Req, State);
         <<"POST">> -> handle_post(Req, State);
         <<"DELETE">> -> handle_delete(Req, State);
         _ -> Req2 = cowboy_req:reply(405, #{}, <<"Method Not Allowed">>, Req),
@@ -30,7 +31,7 @@ init(Req, State) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Обрабатывает POST-запрос на создание нового пользователя.
-%% Ожидает JSON с полями `username` и `password`.
+%% Ожидает JSON с полями username и password.
 %%
 %% @param Req Cowboy request object
 %% @param State Состояние обработчика
@@ -60,7 +61,7 @@ handle_post(Req, State) ->
 %%--------------------------------------------------------------------
 %% @doc
 %% Обрабатывает DELETE-запрос на удаление пользователя.
-%% Имя пользователя берётся из пути (`:username`).
+%% Имя пользователя берётся из пути (:username).
 %%
 %% @param Req Cowboy request object
 %% @param State Состояние обработчика
@@ -88,4 +89,28 @@ handle_delete(Req, State) ->
                     Req2 = cowboy_req:reply(400, #{}, <<>>, Req),
                     {ok, Req2, State}
             end
+    end.
+%%--------------------------------------------------------------------
+%% @doc
+%% Обрабатывает GET-запрос на получение списка всех абонентов.
+%% Возвращает JSON вида {"users":[{"aor":"..."}, ...]} без паролей.
+%%
+%% @param Req Cowboy request object
+%% @param State Состояние обработчика
+%% @return {ok, Req2, State}
+%% @end
+%%--------------------------------------------------------------------
+handle_get(Req, State) ->
+    case sip_serv_api:get_users() of
+        {ok, Users} ->
+            Body = jsx:encode(#{<<"users">> => Users}),
+            Req2 = cowboy_req:reply(200, #{
+                <<"content-type">> => <<"application/json">>
+            }, Body, Req),
+            {ok, Req2, State};
+        {error, _} ->
+            Req2 = cowboy_req:reply(500, #{
+                <<"content-type">> => <<"application/json">>
+            }, <<"{\"status\":\"error\"}">>, Req),
+            {ok, Req2, State}
     end.
